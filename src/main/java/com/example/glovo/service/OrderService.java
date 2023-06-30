@@ -1,44 +1,52 @@
 package com.example.glovo.service;
 
-import com.example.glovo.model.Order;
-import com.example.glovo.model.Product;
+import com.example.glovo.converter.OrderConverter;
+import com.example.glovo.dto.OrderDto;
+import com.example.glovo.entity.Order;
+import com.example.glovo.entity.Product;
+import com.example.glovo.exeption.OrderNotFoundExeption;
+import com.example.glovo.repository.OrderRepository;
+import com.example.glovo.repository.ProductRepository;
+import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
+import java.sql.Date;
+import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 @Service
+@AllArgsConstructor
+
 public class OrderService {
 
-    private final List<Order> orders = new ArrayList<>();
+    private final OrderRepository orderRepository;
+    private final ProductRepository productRepository;
 
-    public Optional<Order> getOrderById(int id) {
-        return orders.stream().filter(order -> order.getId() == id).findFirst();
+    public OrderDto save(OrderDto orderDto) {
+
+        Order savedOrder = orderRepository.save(Order.builder().date(Date.valueOf(LocalDate.now())).build());
+
+        List<Product> products = orderDto.getProducts().stream()
+                .map(productDto -> Product.builder()
+                        .cost(productDto.getCost())
+                        .name(productDto.getName())
+                        .orderId(savedOrder.getId())
+                        .build()).toList();
+
+        products = (List<Product>) productRepository.saveAll(products);
+
+        return OrderConverter.toOrderDto(savedOrder, products);
     }
 
-    public List<Order> getAll() {
-        return this.orders;
+    public List<OrderDto> getAll() {
+        return orderRepository.findAll().stream()
+                .map(order -> OrderConverter.toOrderDto(order, productRepository.findAllByOrderId(order.getId())))
+                .toList();
     }
 
-    public Order save(Order order) {
-        Order orderAdded = new Order(order);
-        orders.add(orderAdded);
-        return orderAdded;
-    }
-
-    public Optional<Order> addProduct(int id, Product product) {
-        orders.get(id).getProducts().add(product);
-        calculateCost(id);
-        return getOrderById(id);
-    }
-
-    private void calculateCost(int id) {
-        double newCost = 0;
-
-        for (Product product : orders.get(id).getProducts()) {
-            newCost += product.getCost();
-        }
-        orders.get(id).setCost(newCost);
+    public OrderDto getOrderById(int id) {
+        return orderRepository.findById(id)
+                .map(order -> OrderConverter.toOrderDto(order, productRepository.findAllByOrderId(id)))
+                .orElseThrow(() -> new OrderNotFoundExeption("Order not found..."));
     }
 }
